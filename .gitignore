@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+# never commit weights or the HF cache
+models/
+*.safetensors
+.cache/
+.env
