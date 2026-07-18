@@ -8,3 +8,4 @@ models/
 *.safetensors
 .cache/
 .env
+.venv-quant/
