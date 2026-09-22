@@ -11,7 +11,7 @@ KEY: it's memory-BANDWIDTH-bound, not compute-bound.
 Decode = stream all weights across the bus per token; tiny compute.
 So decode speed is set by BYTES MOVED, not FLOPs. Everything follows from this.
 
-## 2. Optimization 1 — FP8 quantization (90s)   [SHOW: fp8-vs-bf16.png]
+## 2. Optimization 1 — FP8 quantization (90s)   [SHOW: 01-fp8-quantization/charts/fp8-vs-bf16.png]
 Open the table in Google Doc -> A4 (** FP8 Quantization)
 Quantized weights bf16 -> FP8. Model 5.75 -> 3.2 GB (44% smaller).
 Result: 1.67x decode throughput (139 -> 232 tok/s), TPOT 27.75 -> 16.57 ms.
@@ -20,7 +20,7 @@ WHY NOT 2x: KV cache stayed bf16, and fixed overhead doesn't shrink.
 Honest tell: TPOT and throughput both moved 1.67x — same win, two measurements.
 Quality: near-lossless on spot-check.
 
-## 3. Optimization 2 — prefix caching (90s)   [SHOW: prefix-caching-ttft.png]
+## 3. Optimization 2 — prefix caching (90s)   [SHOW: 02-prefix-caching/charts/prefix-caching-ttft.png]
 Open the table in Google Doc -> A5 (** Prefill Caching)
 Shared-prefix workload (think RAG / shared system prompts).
 Result: median TTFT 424 -> 73 ms = 5.8x faster.

@@ -19,5 +19,5 @@ curl -N http://localhost:8000/v1/chat/completions \
 curl -sS http://localhost:8000/metrics | grep -E "vllm:(generation_tokens|prompt_tokens|num_requests)" 
 
 # ── CHARTS to show (open these images) ──
-# charts/fp8-vs-bf16.png          -> FP8: 1.67x decode, 44% smaller
-# charts/prefix-caching-ttft.png  -> prefix caching: 5.8x median TTFT
+# ../01-fp8-quantization/charts/fp8-vs-bf16.png       -> FP8: 1.67x decode, 44% smaller
+# ../02-prefix-caching/charts/prefix-caching-ttft.png -> prefix caching: 5.8x median TTFT
