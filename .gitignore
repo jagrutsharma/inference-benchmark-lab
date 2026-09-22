@@ -9,3 +9,4 @@ models/
 .cache/
 .env
 .venv-quant/
+.idea/
