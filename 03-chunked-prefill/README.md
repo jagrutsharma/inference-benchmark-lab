@@ -1,4 +1,8 @@
-# A7 Chunked Prefill
+# Stage 3 (cont.) — Chunked Prefill
+
+**Status: incomplete.** The OFF baseline (Step 3) is run and captured below. The ON runs
+(budget 2048, budget 512) and the chart/analysis (Steps 4-5) haven't been done yet —
+tracked as a remaining Track A experiment.
 
 **Goal:** make prefill/decode *interference* visible and then tune it away.
 
@@ -19,6 +23,16 @@ It's the single-node, time-multiplexed version of disaggregation (Stage 6, Dynam
 **Caveat (vLLM V1):** chunked prefill is ON by default (A6 server log:
 `enable_chunked_prefill=True`, effective budget 2048). So all prior stages already had it on.
 A7 turns it OFF to expose the interference, then dials chunk size to show the tradeoff.
+
+## Contents
+
+- [Step 1: Flags](#step-1-flags)
+- [Step 2: The workload](#step-2-the-workload)
+- [Step 3: Run with Chunked Prefill OFF (baseline)](#step-3-run-with-chunked-prefill-off-baseline)
+- [Step 4: Run with Chunked Prefill ON (budget 2048, then 512)](#step-4-run-with-chunked-prefill-on-budget-2048-then-512) — pending
+- [Step 5: Analysis & Chart](#step-5-analysis-and-chart) — pending
+- [Gotchas](#gotchas)
+- [Reference](#reference)
 
 ---
 
@@ -72,7 +86,7 @@ nvidia-smi           # GPU memory near-empty
 
 ### 3b. Serve with chunked prefill disabled
 ```
-cd ~/code/inference-benchmark-lab
+cd 03-chunked-prefill
 ./scripts/serve-chunked.sh off
 ```
 
@@ -80,18 +94,61 @@ cd ~/code/inference-benchmark-lab
 ```
 docker logs vllm-cp 2>&1 | grep -iE "enable_chunked_prefill|max_num_batched_tokens"
 ```
-Expect `enable_chunked_prefill=False` and an effective `max_num_batched_tokens >= 8192`.
-⟨PASTE THE chunked_prefill / batched_tokens LOG LINES HERE⟩
+Expect `enable_chunked_prefill=False` and an effective `max_num_batched_tokens >= 8192`. Actual:
+```
+non-default args: {..., 'gpu_memory_utilization': 0.85, 'max_num_seqs': 16, 'enable_chunked_prefill': False}
+```
+(`max_num_batched_tokens` isn't printed in `non-default args` when disabled — vLLM auto-raises
+it to `max_model_len` (8192) internally, confirmed by the 4096-token prefill running as one
+atomic step in the benchmark below, with no chunk-boundary stalls in the trace.)
 
 ### 3d. Run the benchmark
 ```
 ./scripts/bench-chunked.sh off
 ```
-⟨PASTE THE "Serving Benchmark Result" BLOCK HERE⟩
+```
+============ Serving Benchmark Result ============
+Successful requests:                     200
+Failed requests:                         0
+Maximum request concurrency:             16
+Benchmark duration (s):                  85.47
+Total input tokens:                      819200
+Total generated tokens:                  51200
+Request throughput (req/s):              2.34
+Output token throughput (tok/s):         599.03
+Peak output token throughput (tok/s):    640.00
+Peak concurrent requests:                32.00
+Total token throughput (tok/s):          10183.55
+---------------Time to First Token----------------
+Mean TTFT (ms):                          163.75
+Median TTFT (ms):                        156.32
+P95 TTFT (ms):                           259.32
+P99 TTFT (ms):                           321.64
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          25.35
+Median TPOT (ms):                        25.56
+P95 TPOT (ms):                           25.67
+P99 TPOT (ms):                           25.71
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           25.35
+Median ITL (ms):                         25.30
+P95 ITL (ms):                            27.24
+P99 ITL (ms):                            37.43
+==================================================
+```
+
+| Metric | Median | P95 | P99 | tail (p99/median) |
+|---|---|---|---|---|
+| ITL | 25.30 | 27.24 | 37.43 | **1.48x** |
+| TPOT | 25.56 | 25.67 | 25.71 | ~flat |
+| TTFT | 156.32 | 259.32 | 321.64 | - |
+
+Matches the OFF prediction from Step 2: a real ITL p99 tail (1.48x median) with TPOT
+median essentially flat — the interference shows up in the worst case, not the average.
 
 ### 3e. Copy the result out, then stop the server
 ```
-docker cp vllm-cp:/root/results/chunked-prefill-off.json ~/code/inference-benchmark-lab/results/
+docker cp vllm-cp:/root/results/chunked-prefill-off.json results/
 docker rm -f vllm-cp
 ```
 
@@ -106,7 +163,7 @@ Repeat Step 3's serve → verify → bench → copy → remove, changing only th
 ./scripts/serve-chunked.sh on2048
 docker logs vllm-cp 2>&1 | grep -iE "enable_chunked_prefill|max_num_batched_tokens"   # expect True / 2048
 ./scripts/bench-chunked.sh on2048
-docker cp vllm-cp:/root/results/chunked-prefill-on2048.json ~/code/inference-benchmark-lab/results/
+docker cp vllm-cp:/root/results/chunked-prefill-on2048.json results/
 docker rm -f vllm-cp
 ```
 ⟨PASTE on2048 LOG + RESULT BLOCK HERE⟩
@@ -116,14 +173,14 @@ docker rm -f vllm-cp
 ./scripts/serve-chunked.sh on512
 docker logs vllm-cp 2>&1 | grep -iE "enable_chunked_prefill|max_num_batched_tokens"   # expect True / 512
 ./scripts/bench-chunked.sh on512
-docker cp vllm-cp:/root/results/chunked-prefill-on512.json ~/code/inference-benchmark-lab/results/
+docker cp vllm-cp:/root/results/chunked-prefill-on512.json results/
 docker rm -f vllm-cp
 ```
 ⟨PASTE on512 LOG + RESULT BLOCK HERE⟩
 
 ---
 
-## Step 5: Analysis & Chart
+## Step 5: Analysis and Chart
 
 ### 5a. Results table (fill from the three JSONs)
 
@@ -163,3 +220,24 @@ python3 scripts/make-chart-chunked.py \
 git add -A && git commit -m "A7: chunked prefill — ITL-tail before/after + chunk-size dial"
 git push
 ```
+
+## Gotchas
+
+- **`max_num_batched_tokens` doesn't show up in `non-default args` when chunked prefill
+  is disabled** — only `enable_chunked_prefill: False` does. vLLM auto-raises the budget
+  to `max_model_len` internally; the confirmation is indirect (the 4096-token prefill runs
+  as one atomic step with no chunk-boundary stalls), not a printed value.
+- **Concurrency is raised to 16 here, not the repo's usual 4** — at low concurrency the
+  interference this stage measures barely shows up, because there's rarely a long prefill
+  landing while many sequences are mid-decode. This is a deliberate workload change, not
+  an inconsistency with Stages 01/02.
+- **Dataset is `random`, not `prefix_repetition`** — deliberately, so prefix caching can
+  never fire and chunked prefill is isolated as the only variable acting on prefill.
+- **This is the one stage still missing its ON arms.** Don't read the OFF-only numbers
+  above as "chunked prefill doesn't help" — no comparison has been run yet.
+
+## Reference
+
+- Raw results so far: `results/chunked-prefill-off.json` (ON 2048/512 not yet run).
+- Serve/bench scripts: `scripts/serve-chunked.sh {off|on2048|on512}`, `scripts/bench-chunked.sh {off|on2048|on512}`.
+- Chart script: not yet written (`scripts/make-chart-chunked.py`, planned).
