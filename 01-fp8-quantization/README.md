@@ -230,7 +230,9 @@ curl -sS http://localhost:8000/v1/chat/completions \
   -d '{"model":"Qwen2.5-3B-FP8","messages":[{"role":"user","content":"Explain what a KV cache is in two sentences."}]}' \
   | jq -r '.choices[0].message.content'
 # "A KV (Key-Value) cache is a type of database that stores data as key-value pairs..."
-# — near-identical in substance to the bf16 answer. Near-lossless, confirmed by eyeball.
+# — near-identical in substance to the bf16 answer. A one-prompt smoke test, not a
+# rigorous quality eval (no perplexity/benchmark delta measured) — but no obvious
+# regression on this prompt.
 ```
 
 Benchmark (identical command to Step 2, only the model/tokenizer/output file differ):
@@ -270,7 +272,7 @@ Median TPOT (ms):                        16.57
 | Benchmark duration | lower | 366.6 s | 220.4 s | **1.66x faster** | Wall-clock time for the whole 200-request test — cut by about a third |
 | Model size (on disk) | lower | 5.75 GB | 3.17 GB | 45% smaller | The file `vllm serve` loads |
 | Weights (in memory) | lower | 5.79 GB | 3.23 GB | 44% smaller | What the boot log reports actually landed on the GPU |
-| Quality (spot-check) | — | coherent | coherent | near-lossless | Same question, same-substance answer, eyeballed side by side |
+| Quality (spot-check) | — | coherent | coherent | no obvious regression | Same question, same-substance answer, eyeballed side by side — a smoke test, not a rigorous eval |
 
 Throughput and TPOT moving together (1.66x / 1.67x) is the tell that this is a genuine
 decode speedup, not a benchmarking artifact — they're two views of the same effect.
@@ -323,8 +325,10 @@ around and directly shrinks storage.)
 
 Cross-checked against the live vLLM log: `Available KV cache memory: 93.75 GiB` →
 93.75 GiB ÷ 36 KB/token = 2,730,667 tokens predicted, vLLM reported `2,730,528 tokens` —
-agreement to within 139 tokens (**0.005%**). Same check on the FP8 run's freed-up memory
-(+3.09 GB ÷ 36 KB ≈ +90,000 tokens) matches the observed KV cache increase almost exactly.
+agreement to within 139 tokens (**0.005%**). Same check on the FP8 run's freed-up memory:
+the extra 3.09 GB (93.75 → 96.84 GiB, freed by smaller weights) predicts +90,003 tokens
+(3.09 GB ÷ 36 KB); vLLM's actual reported KV cache size went from 2,730,528 → 2,820,688
+tokens, an observed increase of 90,160 — agreement to within 157 tokens (**0.17%**).
 
 ### Capacity ceiling vs. bandwidth ceiling
 
